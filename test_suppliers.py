@@ -1,4 +1,5 @@
 import json
+import io
 from pathlib import Path
 import tempfile
 import unittest
@@ -36,7 +37,7 @@ class Tests(unittest.TestCase):
             with self.assertRaises(ValueError): s.fetch('test')
     def test_redirect_refused(self):
         with self.assertRaises(urllib.error.HTTPError) as raised:
-            s.NoRedirect().redirect_request(s.urllib.request.Request(s.BASE),None,302,'',{},'https://bad.invalid')
+            s.NoRedirect().redirect_request(s.urllib.request.Request(s.BASE),io.BytesIO(),302,'',{},'https://bad.invalid')
         raised.exception.close()
     def test_url_injection(self):
         for value in ['javascript:alert(1)','file:///etc/passwd','https://a:b@example.com','https://ok.invalid/\n--arg']:
@@ -61,7 +62,7 @@ class Tests(unittest.TestCase):
                     self.assertTrue(failed['stale'])
                     self.assertEqual(len(failed['suppliers']),1)
                     self.assertNotIn('secret must',json.dumps(failed))
-                with patch.object(s,'fetch',side_effect=urllib.error.HTTPError('',403,'',{},None)):
+                with patch.object(s,'fetch',side_effect=urllib.error.HTTPError('',403,'',{},io.BytesIO())):
                     self.assertTrue(s.report(True,new_key='wrong')['error'])
                     self.assertFalse((s.CONFIG/'credentials.json').exists())
                 for p in base.rglob('*.json'): self.assertEqual(p.stat().st_mode & 0o777,0o600)
@@ -159,7 +160,7 @@ class CreateTests(unittest.TestCase):
             self.assertTrue(s.create_supplier({**self.fields,'allow_duplicate':True})['created'])
             post.assert_called_once()
     def test_write_permission_failure_is_clear_and_not_success(self):
-        error=urllib.error.HTTPError(s.BASE,403,'private error must not leak',{},None)
+        error=urllib.error.HTTPError(s.BASE,403,'private error must not leak',{},io.BytesIO())
         with patch.object(s,'fetch',return_value=[]), patch.object(s,'create_request',side_effect=error):
             result=s.create_supplier(self.fields)
         self.assertEqual(result,{'created':False,'error_code':'createPermission'})
@@ -245,7 +246,7 @@ class DeleteTests(unittest.TestCase):
             result=s.delete_supplier(self.payload)
             self.assertEqual(result['error_code'],'deleteChanged');delete.assert_not_called()
     def test_permission_failure_keeps_record_and_no_success(self):
-        error=urllib.error.HTTPError(s.BASE,403,'private detail',{},None)
+        error=urllib.error.HTTPError(s.BASE,403,'private detail',{},io.BytesIO())
         with patch.object(s,'existing_attempt',return_value=self.row), patch.object(s,'delete_request',side_effect=error), patch.object(s,'report') as report:
             result=s.delete_supplier(self.payload)
             self.assertEqual(result,{'deleted':False,'error_code':'deletePermission'})
@@ -347,7 +348,7 @@ class EditTests(unittest.TestCase):
             self.assertTrue(s.edit_supplier(payload)['duplicate']);update.assert_not_called()
             self.assertTrue(s.edit_supplier({**payload,'allow_duplicate':True})['updated'])
     def test_permission_error_is_not_success(self):
-        error=urllib.error.HTTPError(s.BASE,403,'private',{},None)
+        error=urllib.error.HTTPError(s.BASE,403,'private',{},io.BytesIO())
         with patch.object(s,'existing_attempt',return_value=self.row),patch.object(s,'update_request',side_effect=error):
             result=s.edit_supplier(self.payload)
         self.assertEqual(result,{'updated':False,'error_code':'editPermission'});error.close()
