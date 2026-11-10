@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "servicem8.suppliers",
+  "name": "Supplier Quick Access",
+  "version": "1.3.3",
+  "author": "Ian Horne",
+  "license": "MIT",
+  "description": "Search, create, edit and delete ServiceM8 suppliers, with quick contact actions.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Supplier Quick Access",
+    "description": "A searchable ServiceM8 supplier directory",
+    "category": "Info",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

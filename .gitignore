@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+dist/
+.env
+.env.*
+credentials.json
+*credentials*.json
+*.log
+*.pem
+*.key
+*.p12
+*.pfx
+*.qslog
+screenshots/
+.cache/
