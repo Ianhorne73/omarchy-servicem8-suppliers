@@ -240,11 +240,6 @@ Ui.BarWidget {
         property string value: ""
         property bool copying: false
         stdinEnabled: true
-        stdout: StdioCollector {
-            onStreamFinished: {
-                try { if (JSON.parse(text).notice_code === "phoneCopiedNoHandler") root.noticeCode = "phoneCopiedNoHandler" } catch(e) {}
-            }
-        }
         onStarted: { write(value); stdinEnabled = false; value = "" }
         onExited: function(code, status) { root.actionMessage = code === 0 ? (copying ? strings.t("copied") : "") : strings.t("actionError") }
     }
@@ -481,7 +476,6 @@ Ui.BarWidget {
                         Flow {
                             width: parent.width; spacing: Commons.Style.space(5)
                             HeaderButton { text: strings.t("email"); visible: !!supplierCard.modelData.email; focusable: true; onClicked: root.act("email",supplierCard.modelData.email); onRightClicked: root.act("copy",supplierCard.modelData.email) }
-                            HeaderButton { text: strings.t("phone"); visible: !!supplierCard.modelData.phone; focusable: true; onClicked: root.act("phone",supplierCard.modelData.phone); onRightClicked: root.act("copy",supplierCard.modelData.phone) }
                             HeaderButton { text: strings.t("website"); visible: !!supplierCard.modelData.website; focusable: true; onClicked: root.act("website",supplierCard.modelData.website) }
                             HeaderButton { text: strings.t("websearch"); visible: !supplierCard.modelData.website; focusable: true; onClicked: root.act("website","https://www.google.com/search?q=" + encodeURIComponent(supplierCard.modelData.name + " " + supplierCard.modelData.address)) }
                             HeaderButton { text: strings.t("map"); visible: !!supplierCard.modelData.address; focusable: true; onClicked: root.act("map",supplierCard.modelData.address) }

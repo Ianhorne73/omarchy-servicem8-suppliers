@@ -86,9 +86,6 @@ def action_url(kind, value):
     if kind == 'email':
         if value.count('@') != 1 or any(c.isspace() for c in value) or any(c in value for c in '?&#,;'): return ''
         return 'mailto:' + urllib.parse.quote(value, safe='@.+-_')
-    if kind == 'phone':
-        number = ''.join(c for c in value if c in '+0123456789')
-        return 'tel:' + number if sum(c.isdigit() for c in number) >= 5 else ''
     if kind == 'map': return 'https://www.google.com/maps/search/?api=1&query=' + urllib.parse.quote(value, safe='')
     return ''
 
@@ -319,19 +316,6 @@ def delete_supplier(payload):
     except (OSError, ValueError, urllib.error.URLError):
         return {'deleted':False, 'error_code':'deleteUncertain'}
 
-def phone_action(value):
-    """Do not let xdg-open fall back to a browser when no dialer exists."""
-    url = action_url('phone', value)
-    if not url: return 1, ''
-    try:
-        handler = subprocess.run(['xdg-mime','query','default','x-scheme-handler/tel'], capture_output=True, text=True, timeout=3).stdout.strip()
-        browser = any(name in handler.lower() for name in ('chrome','chromium','firefox','brave','vivaldi','edge','opera','browser'))
-        if handler.endswith('.desktop') and '/' not in handler and not browser:
-            return subprocess.run(['xdg-open',url],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode, ''
-        result = subprocess.run(['wl-copy','--type','text/plain'],input=value.strip(),text=True)
-        return result.returncode, 'phoneCopiedNoHandler' if result.returncode == 0 else ''
-    except (OSError, subprocess.TimeoutExpired): return 1, ''
-
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--force',action='store_true')
@@ -339,7 +323,7 @@ def main():
     parser.add_argument('--create',action='store_true')
     parser.add_argument('--delete',action='store_true')
     parser.add_argument('--edit',action='store_true')
-    parser.add_argument('--action',choices=['website','email','phone','map','copy'])
+    parser.add_argument('--action',choices=['website','email','map','copy'])
     args=parser.parse_args()
     if args.edit:
         try:
@@ -368,10 +352,6 @@ def main():
     if args.action:
         value=sys.stdin.read(32769)
         if len(value)>32768: return 1
-        if args.action=='phone':
-            code, notice = phone_action(value)
-            print(json.dumps({'notice_code':notice}))
-            return code
         if args.action=='copy':
             return subprocess.run(['wl-copy','--type','text/plain'],input=value,text=True).returncode
         url=action_url(args.action,value)

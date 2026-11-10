@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.4
+
+- Remove the Call button and phone-handler integration. Supplier phone numbers remain visible and included in Copy.
+
 ## 1.3.3
 
 - Handle Call without opening a browser when no dedicated phone app is configured: copy the number and show an explanation.

@@ -6,7 +6,6 @@
   "key": "ServiceM8 API key",
   "connect": "Save connection",
   "email": "Email",
-  "phone": "Call",
   "website": "Website",
   "map": "Map",
   "copy": "Copy",
@@ -87,6 +86,5 @@
   "noEditChanges": "No fields have changed.",
   "editYesPrompt": "Type yes below, then click Save confirmed changes.",
   "reviewEdits": "Save changes",
-  "confirmEdits": "Save confirmed changes",
-  "phoneCopiedNoHandler": "No phone app is configured. Number copied—paste it into your phone app."
+  "confirmEdits": "Save confirmed changes"
 }

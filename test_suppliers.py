@@ -46,7 +46,6 @@ class Tests(unittest.TestCase):
             self.assertEqual(s.action_url('email',value),'')
         self.assertEqual(s.action_url('email','orders@example.com'),'mailto:orders@example.com')
         self.assertEqual(s.action_url('website','example.com'),'https://example.com')
-        self.assertEqual(s.action_url('phone','(07) 1234 5678'),'tel:0712345678')
     def test_permissions_cache_and_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
             base=Path(tmp)
@@ -363,25 +362,5 @@ class EditTests(unittest.TestCase):
                 self.assertFalse(s.edit_supplier(value)['updated'])
         get.assert_not_called()
 
-
-class PhoneActionTests(unittest.TestCase):
-    def test_no_dialer_copies_number_without_opening_browser(self):
-        from types import SimpleNamespace
-        for handler in ['', 'google-chrome.desktop','chromium.desktop','firefox.desktop']:
-            with patch.object(s.subprocess,'run',side_effect=[SimpleNamespace(stdout=handler),SimpleNamespace(returncode=0)]) as run:
-                self.assertEqual(s.phone_action('07 1234 5678'),(0,'phoneCopiedNoHandler'))
-                self.assertEqual(run.call_args.args[0],['wl-copy','--type','text/plain'])
-                self.assertEqual(run.call_args.kwargs['input'],'07 1234 5678')
-                self.assertFalse(any(c.args[0][0]=='xdg-open' for c in run.call_args_list))
-    def test_configured_dialer_receives_tel_link(self):
-        from types import SimpleNamespace
-        with patch.object(s.subprocess,'run',side_effect=[SimpleNamespace(stdout='org.linphone.Linphone.desktop'),SimpleNamespace(returncode=0)]) as run:
-            self.assertEqual(s.phone_action('07 1234 5678'),(0,''))
-            self.assertEqual(run.call_args.args[0],['xdg-open','tel:0712345678'])
-    def test_invalid_phone_never_spawns_process(self):
-        with patch.object(s.subprocess,'run') as run:
-            self.assertEqual(s.phone_action('invalid'),(1,''));run.assert_not_called()
-    def test_missing_phone_utilities_fail_cleanly(self):
-        with patch.object(s.subprocess,'run',side_effect=FileNotFoundError): self.assertEqual(s.phone_action('0712345678'),(1,''))
 
 if __name__=='__main__': unittest.main()

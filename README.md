@@ -4,8 +4,8 @@
 
 A searchable ServiceM8 supplier directory in your Omarchy bar. Open the parcel icon to find a supplier by name, email, phone, address, account or business number.
 
-- Email opens a draft in your default mail app; Call opens a configured phone app. If no phone app is registered, or the registered handler is a browser, it copies the number and shows an explanation instead.
-- Right-click Email or Call to copy that detail. Copy copies the whole card.
+- Email opens a draft in your default mail app.
+- Right-click Email to copy the address. Copy copies the whole card, including the phone number.
 - Map opens the stored address in Google Maps, including addresses saved across multiple lines.
 - Website opens a stored website when available. Search web searches Google using the supplier name and address; results are not verified supplier websites.
 - Displays available account numbers, business numbers, addresses and notes.
@@ -15,7 +15,7 @@ This is an independent integration, not an official ServiceM8 product. No Servic
 
 ## Requirements
 
-Current Omarchy with Quickshell `qs.Ui.KeyboardPanel` and `qs.Commons.Translations`; Python 3.9+; xdg-utils (`xdg-open`). Install wl-clipboard for copy actions. Email requires a configured `mailto:` handler. Calling requires a dedicated `tel:` phone app; otherwise the number is copied using wl-clipboard. The Suppliers add-on must be enabled in ServiceM8 and your API key must allow supplier read access. Creating, editing or deleting suppliers additionally requires supplier write access (`manage_suppliers`). The plugin sends a POST only when you press Save to ServiceM8, Save confirmed changes or Retry save, and a DELETE only after you type exactly `yes` and click Delete from ServiceM8; it never sends emails or SMS.
+Current Omarchy with Quickshell `qs.Ui.KeyboardPanel` and `qs.Commons.Translations`; Python 3.9+; xdg-utils (`xdg-open`). Install wl-clipboard for copy actions. Email requires a configured `mailto:` handler. The Suppliers add-on must be enabled in ServiceM8 and your API key must allow supplier read access. Creating, editing or deleting suppliers additionally requires supplier write access (`manage_suppliers`). The plugin sends a POST only when you press Save to ServiceM8, Save confirmed changes or Retry save, and a DELETE only after you type exactly `yes` and click Delete from ServiceM8; it never sends emails or SMS.
 
 ## Install
 
@@ -62,7 +62,7 @@ Deletion tests use mocked API responses and a synthetic desktop helper; no real 
 
 Opening the panel fetches suppliers when the local cache is older than 15 minutes. Refresh or right-clicking the bar icon bypasses the cache. There is no timer or background polling. The complete active supplier directory is paginated, with a safety cap of 10,000 records / 100 pages. Individual HTTPS requests time out after 15–20 seconds and reject redirects and responses larger than 4 MiB. A failed refresh preserves cached details and shows an error. Archived/deleted suppliers are excluded.
 
-ServiceM8's documented supplier schema includes name, email, phone, address, account number and business number, but no website or notes fields. These optional fields are displayed if the API supplies them; the plugin does not invent websites from email addresses. Search web and Map send the chosen name/address to Google only when clicked. Email, call and website actions are handled by your chosen desktop applications.
+ServiceM8's documented supplier schema includes name, email, phone, address, account number and business number, but no website or notes fields. These optional fields are displayed if the API supplies them; the plugin does not invent websites from email addresses. Search web and Map send the chosen name/address to Google only when clicked. Email and website actions are handled by your chosen desktop applications.
 
 The shared API key is plaintext, owner-only (0600), in `~/.config/omarchy/servicem8/credentials.json`. Both plugins read and update this same file. Private cache files are owner-only in `$XDG_CACHE_HOME/omarchy/servicem8-suppliers/` (default `~/.cache/...`); caches are separated by credential fingerprint. Their parent directories are 0700. Keys travel through stdin and an HTTPS header, never process arguments or logs. Network and supplier text are rendered as plain text; actions use argument arrays, never shell interpolation.
 
@@ -85,7 +85,7 @@ omarchy plugin validate .
 python3 build_release.py
 ```
 
-In a running desktop, test open, search, scroll, Escape, outside-click dismissal, right-click refresh, email/call/copy/map actions, offline cached display, no-key setup, a rejected replacement key, disable/re-enable and removal/reinstall. Saved QML normally hot-reloads. If Omarchy retains stale plugin code, rescan plugins and, if needed, run `omarchy restart shell`. Keep private screenshots and API outputs out of the repository. Tests cover pagination, bounded responses, redirect refusal, action URL validation, private caches, failed credentials, markup-shaped display input, native creation fields, duplicate checks, permission failures, recovery of uncertain saves, exact deletion confirmation, changed-name checks and deletion-cache updates. The desktop integration checks verify failed-save form retention, successful-save list updates, editing with prefilled fields, and the typed-confirmation deletion flow using synthetic data.
+In a running desktop, test open, search, scroll, Escape, outside-click dismissal, right-click refresh, email/copy/map actions, offline cached display, no-key setup, a rejected replacement key, disable/re-enable and removal/reinstall. Saved QML normally hot-reloads. If Omarchy retains stale plugin code, rescan plugins and, if needed, run `omarchy restart shell`. Keep private screenshots and API outputs out of the repository. Tests cover pagination, bounded responses, redirect refusal, action URL validation, private caches, failed credentials, markup-shaped display input, native creation fields, duplicate checks, permission failures, recovery of uncertain saves, exact deletion confirmation, changed-name checks and deletion-cache updates. The desktop integration checks verify failed-save form retention, successful-save list updates, editing with prefilled fields, and the typed-confirmation deletion flow using synthetic data.
 
 ## Release checks
 
@@ -101,4 +101,4 @@ Prepared for the [Omarchy marketplace publishing guide](https://plugins.omarchy.
 
 API references: [List suppliers](https://developer.servicem8.com/reference/listsuppliers), [Create supplier](https://developer.servicem8.com/reference/createsuppliers), [Delete supplier](https://developer.servicem8.com/reference/deletesuppliers), [Update supplier](https://developer.servicem8.com/reference/updatesuppliers).
 
-Maintainer notes for submission: Requires Omarchy with Quickshell plugin support, Python 3.9+, xdg-utils and wl-clipboard for copying/fallback phone actions. Requires the ServiceM8 Suppliers add-on and each user’s own supplier-read API key; creation, editing and deletion also need supplier-write access. Optional My Jobs Today integration shares one locally saved key. No install hooks, no elevated privileges, no background service, and no external Python runtime packages. Network refresh occurs on user interaction; typed yes is required for edits and deletion. The plugin never sends email or SMS itself. MIT source; no bundled ServiceM8 artwork or private preview assets.
+Maintainer notes for submission: Requires Omarchy with Quickshell plugin support, Python 3.9+, xdg-utils and wl-clipboard for copying. Requires the ServiceM8 Suppliers add-on and each user’s own supplier-read API key; creation, editing and deletion also need supplier-write access. Optional My Jobs Today integration shares one locally saved key. No install hooks, no elevated privileges, no background service, and no external Python runtime packages. Network refresh occurs on user interaction; typed yes is required for edits and deletion. The plugin never sends email or SMS itself. MIT source; no bundled ServiceM8 artwork or private preview assets.
