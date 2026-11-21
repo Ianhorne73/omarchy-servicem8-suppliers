@@ -30,7 +30,7 @@ omarchy-shell shell rescanPlugins
 omarchy plugin enable servicem8.suppliers --section right
 ```
 
-Open the parcel icon and choose Connection. Enter your own ServiceM8 API key; it is saved only after a successful supplier fetch. If you already use My Jobs Today, its saved connection at `~/.config/omarchy/servicem8/credentials.json` is reused without copying the key. Both plugins use the same saved connection. A green dot and “Connected to ServiceM8” confirm successful access; failed refreshes show “Connection needs attention”. Older supplier-only credentials are reused when no shared key exists and migrated after successful validation. A rejected replacement leaves the previous saved key intact.
+Open the parcel icon and choose Connection. Enter your own ServiceM8 API key; it is saved only after a successful supplier fetch. If you already use My Jobs Today, its saved connection at `~/.config/omarchy/servicem8/credentials.json` is reused without copying the key. Choosing Save connection explicitly saves or replaces the key used by both plugins, preserving other shared settings. A green dot and “Connected to ServiceM8” confirm successful access; failed refreshes show “Connection needs attention”. Older supplier-only credentials are reused when no shared key exists, without modifying either credentials file. A rejected replacement or an unreadable, malformed or non-regular shared connection file is left intact.
 
 No credentials, staff names, supplier records or private account data are included in this repository or its release archive. Test contacts and keys are synthetic.
 
@@ -64,7 +64,7 @@ Opening the panel fetches suppliers when the local cache is older than 15 minute
 
 ServiceM8's documented supplier schema includes name, email, phone, address, account number and business number, but no website or notes fields. These optional fields are displayed if the API supplies them; the plugin does not invent websites from email addresses. Search web and Map send the chosen name/address to Google only when clicked. Email and website actions are handled by your chosen desktop applications.
 
-The shared API key is plaintext, owner-only (0600), in `~/.config/omarchy/servicem8/credentials.json`. Both plugins read and update this same file. Private cache files are owner-only in `$XDG_CACHE_HOME/omarchy/servicem8-suppliers/` (default `~/.cache/...`); caches are separated by credential fingerprint. Their parent directories are 0700. Keys travel through stdin and an HTTPS header, never process arguments or logs. Network and supplier text are rendered as plain text; actions use argument arrays, never shell interpolation.
+The shared API key is plaintext, owner-only (0600), in `~/.config/omarchy/servicem8/credentials.json`. Both plugins can read this file, but Supplier Quick Access changes it only after an explicit Save connection and successful supplier fetch. Private cache files are owner-only in `$XDG_CACHE_HOME/omarchy/servicem8-suppliers/` (default `~/.cache/...`); caches are separated by credential fingerprint. Their parent directories are 0700. Keys travel through stdin and an HTTPS header, never process arguments or logs. Network and supplier text are rendered as plain text; actions use argument arrays, never shell interpolation.
 
 ## Disable and remove
 

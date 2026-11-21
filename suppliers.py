@@ -7,6 +7,7 @@ import fcntl
 import uuid
 import json
 import os
+import stat
 from pathlib import Path
 import subprocess
 import sys
@@ -26,14 +27,27 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise urllib.error.HTTPError(req.full_url, code, 'Redirect refused', headers, fp)
 
+def read_object(path):
+    with path.open('rb') as stream:
+        data = stream.read(MAX_BYTES + 1)
+    if len(data) > MAX_BYTES: raise ValueError('File too large')
+    value = json.loads(data)
+    if not isinstance(value, dict): raise ValueError('Expected a JSON object')
+    return value
+
 def read(path):
-    try:
-        with path.open('rb') as stream:
-            data = stream.read(MAX_BYTES + 1)
-        if len(data) > MAX_BYTES: raise ValueError('File too large')
-        value = json.loads(data)
-        return value if isinstance(value, dict) else {}
+    try: return read_object(path)
     except (OSError, ValueError): return {}
+
+def save_connection(key):
+    try:
+        mode = SHARED.lstat().st_mode
+    except FileNotFoundError:
+        current = {}
+    else:
+        if not stat.S_ISREG(mode): raise ValueError('Expected a regular connection file')
+        current = read_object(SHARED)
+    save(SHARED, {**current, 'api_key':key})
 
 def save(path, data):
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -102,7 +116,10 @@ def report(force=False, new_key=None, key_override=None):
     try:
         rows = fetch(key)
         data = {'suppliers':rows, 'updated':now.isoformat(), 'error':'', 'needs_setup':False, 'connected':True}
-        if new_key or not read(SHARED).get('api_key'): save(SHARED, {'api_key':key})
+        if new_key is not None:
+            try: save_connection(key)
+            except (OSError, ValueError):
+                return {'suppliers':[], 'error':'Could not save the shared connection. Check the existing connection file and try again.', 'needs_setup':False, 'connected':False}
         save(path, data)
         return data
     except urllib.error.HTTPError as e:

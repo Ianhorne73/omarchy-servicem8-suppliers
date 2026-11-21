@@ -19,7 +19,7 @@
   "updated": "Updated %1",
   "copied": "Copied",
   "actionError": "Could not open the action. Check the saved detail and your default app.",
-  "setupHelp": "Requires the ServiceM8 Suppliers add-on, installed and enabled in your account: Account → Features & Integrations → Suppliers. Your API key is shared automatically with My Jobs Today. Enter it once in either plugin, with read access for suppliers, staff, schedules, jobs, customers and Job Contacts. Creating, editing or deleting suppliers also requires supplier write access (manage_suppliers).",
+  "setupHelp": "Requires the ServiceM8 Suppliers add-on, installed and enabled in your account: Account → Features & Integrations → Suppliers. Save connection replaces the key shared with My Jobs Today. Enter it once in either plugin, with read access for suppliers, staff, schedules, jobs, customers and Job Contacts. Creating, editing or deleting suppliers also requires supplier write access (manage_suppliers).",
   "count": {
     "one": "%1 supplier",
     "other": "%1 suppliers"

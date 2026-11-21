@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.5
+
+- Save or replace the shared connection only when users select Save connection, preserving unrelated settings. Refresh can still use a legacy key without moving it.
+- Refuse to replace a malformed, unreadable or non-regular shared connection file.
+
 ## 1.3.4
 
 - Remove the Call button and phone-handler integration. Supplier phone numbers remain visible and included in Copy.

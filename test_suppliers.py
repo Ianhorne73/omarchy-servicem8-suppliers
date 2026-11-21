@@ -90,16 +90,62 @@ class Tests(unittest.TestCase):
             base=Path(tmp)
             with patch.multiple(s,CONFIG=base/'supplier',SHARED=base/'shared/credentials.json',CACHE=base/'cache'):
                 s.save(s.CONFIG/'credentials.json',{'api_key':'old-private-key'})
-                s.save(s.SHARED,{'api_key':'shared-key'})
+                s.save(s.SHARED,{'api_key':'shared-key','other_setting':{'keep':True}})
                 with patch.object(s,'fetch',return_value=[]) as fetch:
                     self.assertTrue(s.report(True)['connected'])
                     fetch.assert_called_with('shared-key')
                     self.assertTrue(s.report(True,new_key='replacement')['connected'])
-                self.assertEqual(s.read(s.SHARED)['api_key'],'replacement')
+                self.assertEqual(s.read(s.SHARED),{'api_key': 'replacement','other_setting':{'keep':True}})
                 with patch.object(s,'fetch',side_effect=urllib.error.URLError('offline')):
                     self.assertFalse(s.report(True)['connected'])
                     s.report(True,new_key='bad-replacement')
                 self.assertEqual(s.read(s.SHARED)['api_key'],'replacement')
+    def test_legacy_refresh_never_creates_or_overwrites_shared_connection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base=Path(tmp)
+            with patch.multiple(s,CONFIG=base/'supplier',SHARED=base/'shared/credentials.json',CACHE=base/'cache'):
+                legacy = s.CONFIG/'credentials.json'
+                s.save(legacy, {'api_key':'old-private-key'})
+                original_legacy = legacy.read_bytes()
+                with patch.object(s,'fetch',return_value=[]) as fetch:
+                    self.assertTrue(s.report(True)['connected'])
+                    fetch.assert_called_with('old-private-key')
+                    self.assertFalse(s.SHARED.parent.exists())
+                    s.save(s.SHARED, {'other_setting':True})
+                    original_shared = s.SHARED.read_bytes()
+                    self.assertTrue(s.report(True)['connected'])
+                    self.assertEqual(s.SHARED.read_bytes(),original_shared)
+                    self.assertEqual(legacy.read_bytes(),original_legacy)
+
+    def test_explicit_connection_refuses_overwrite_of_invalid_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base=Path(tmp)
+            with patch.multiple(s,CONFIG=base/'supplier',SHARED=base/'shared/credentials.json',CACHE=base/'cache'):
+                s.SHARED.parent.mkdir()
+                with patch.object(s,'fetch',return_value=[]):
+                    for invalid in (b'broken-json', b'[]'):
+                        s.SHARED.write_bytes(invalid)
+                        self.assertFalse(s.report(True,new_key='replacement')['connected'])
+                        self.assertEqual(s.SHARED.read_bytes(),invalid)
+                    s.SHARED.write_text('{}')
+                    with patch.object(s,'read_object',side_effect=PermissionError):
+                        self.assertFalse(s.report(True,new_key='replacement')['connected'])
+                    self.assertEqual(s.SHARED.read_text(),'{}')
+                    s.SHARED.unlink()
+                    s.SHARED.symlink_to(base/'missing.json')
+                    self.assertFalse(s.report(True,new_key='replacement')['connected'])
+                    self.assertTrue(s.SHARED.is_symlink())
+                    self.assertFalse((base/'missing.json').exists())
+
+    def test_explicit_connection_creates_missing_shared_config_privately(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base=Path(tmp)
+            with patch.multiple(s,CONFIG=base/'supplier',SHARED=base/'shared/credentials.json',CACHE=base/'cache'):
+                with patch.object(s,'fetch',return_value=[]):
+                    self.assertTrue(s.report(True,new_key='replacement')['connected'])
+                self.assertEqual(s.read(s.SHARED)['api_key'],'replacement')
+                self.assertEqual(s.SHARED.stat().st_mode & 0o777,0o600)
+
     def test_corrupt_local_data(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/'bad.json'; path.write_text('[]')
