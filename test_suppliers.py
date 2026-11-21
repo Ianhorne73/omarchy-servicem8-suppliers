@@ -94,12 +94,12 @@ class Tests(unittest.TestCase):
                 with patch.object(s,'fetch',return_value=[]) as fetch:
                     self.assertTrue(s.report(True)['connected'])
                     fetch.assert_called_with('shared-key')
-                    self.assertTrue(s.report(True,new_key='replacement')['connected'])
-                self.assertEqual(s.read(s.SHARED),{'api_key': 'replacement','other_setting':{'keep':True}})
+                    self.assertTrue(s.report(True,new_key='test-only')['connected'])
+                self.assertEqual(s.read(s.SHARED),{'api_key': 'test-only','other_setting':{'keep':True}})
                 with patch.object(s,'fetch',side_effect=urllib.error.URLError('offline')):
                     self.assertFalse(s.report(True)['connected'])
                     s.report(True,new_key='bad-replacement')
-                self.assertEqual(s.read(s.SHARED)['api_key'],'replacement')
+                self.assertEqual(s.read(s.SHARED)['api_key'],'test-only')
     def test_legacy_refresh_never_creates_or_overwrites_shared_connection(self):
         with tempfile.TemporaryDirectory() as tmp:
             base=Path(tmp)
