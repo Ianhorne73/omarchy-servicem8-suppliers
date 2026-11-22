@@ -11,6 +11,15 @@ Ui.BarWidget {
     property bool opened: false
     property bool setupVisible: false
     property bool createVisible: false
+    property string createConnectionId: ""
+    property bool createDraftStarted: false
+    property bool createConnectionChanged: false
+    readonly property bool createConnectionReady: !createConnectionChanged &&
+        createConnectionId !== "" && createConnectionId === (report.connection_id || "")
+    onReportChanged: {
+        if (createConnectionId && report.connection_id && createConnectionId !== report.connection_id)
+            createConnectionChanged = true
+    }
     property var editingSupplier: null
     property bool editReviewVisible: false
     readonly property var editChanges: {
@@ -133,6 +142,10 @@ Ui.BarWidget {
         if (root.busy) return
         cancelDelete()
         if (editingSupplier) resetSupplierForm()
+        if (!createDraftStarted) {
+            createDraftStarted = true
+            createConnectionId = report.connection_id || ""
+        }
         createVisible = true
         setupVisible = false
         createErrorCode = ""
@@ -188,6 +201,7 @@ Ui.BarWidget {
     }
     function saveSupplier() {
         if (root.busy || !supplierName.text.trim()) return
+        if (!editingSupplier && !createConnectionReady) return
         if (possibleDuplicate && !allowDuplicate.checked) return
         if (editingSupplier && !editReviewVisible) {
             editReviewVisible = true
@@ -203,13 +217,16 @@ Ui.BarWidget {
         creator.editing = editingSupplier !== null
         creator.command = ["python3", root.helper, creator.editing ? "--edit" : "--create"]
         creator.payload = JSON.stringify(creator.editing ? {uuid:editingSupplier.uuid,
-            original:editingSupplier.original, fields:fields, allow_duplicate:allowDuplicate.checked, confirmation:editConfirmation.text} : Object.assign(fields,{allow_duplicate:allowDuplicate.checked}))
+            original:editingSupplier.original, fields:fields, allow_duplicate:allowDuplicate.checked, confirmation:editConfirmation.text} : Object.assign(fields,{allow_duplicate:allowDuplicate.checked, connection_id:root.createConnectionId}))
         creator.stdinEnabled = true
         creator.running = true
     }
     function resetSupplierForm() {
         invalidateEditConfirmation()
         editingSupplier = null
+        createConnectionId = ""
+        createDraftStarted = false
+        createConnectionChanged = false
         supplierName.text = supplierEmail.text = supplierPhone.text = supplierAddress.text = supplierAccount.text = supplierBusiness.text = ""
         allowDuplicate.checked = false
         duplicateDetected = false
@@ -231,7 +248,7 @@ Ui.BarWidget {
         onStarted: { write(key); stdinEnabled = false; key = "" }
         stdout: StdioCollector {
             onStreamFinished: {
-                try { root.report = JSON.parse(text) } catch(e) { root.report = Object.assign({}, root.report, {error: "Invalid helper response"}) }
+                try { root.report = JSON.parse(text) } catch(e) { root.report = Object.assign({}, root.report, {error: "Invalid helper response", connection_id: ""}) }
             }
         }
     }
@@ -264,6 +281,8 @@ Ui.BarWidget {
                         list.positionViewAtBeginning()
                     } else {
                         root.createErrorCode = result.error_code || (creator.editing ? "editUncertain" : "createUncertain")
+                        if (!creator.editing && root.createErrorCode === "createConnectionChanged")
+                            root.createConnectionChanged = true
                         root.duplicateDetected = result.duplicate === true
                     }
                 } catch(e) { root.createErrorCode = creator.editing ? "editUncertain" : "createUncertain" }
@@ -391,7 +410,14 @@ Ui.BarWidget {
                         text: strings.t("allowDuplicate")
                         contentItem: Label { text: allowDuplicate.text; leftPadding: allowDuplicate.indicator.width + allowDuplicate.spacing; verticalAlignment: Text.AlignVCenter }
                     }
-                    Label { width: parent.width; visible: root.createErrorCode !== ""; text: root.createErrorCode ? strings.t(root.createErrorCode) : ""; color: Commons.Color.urgent }
+                    Label {
+                        width: parent.width
+                        visible: text !== ""
+                        text: !root.editingSupplier && root.createConnectionChanged ? strings.t("createConnectionChanged") :
+                            root.createErrorCode ? strings.t(root.createErrorCode) :
+                            !root.editingSupplier && !root.createConnectionReady ? strings.t("createConnectionMissing") : ""
+                        color: Commons.Color.urgent
+                    }
                     Column {
                         width: parent.width
                         spacing: 8
@@ -413,7 +439,8 @@ Ui.BarWidget {
                     Flow {
                         width: parent.width
                         spacing: 8
-                        HeaderButton { objectName: "saveSupplier"; text: creator.running ? strings.t("savingSupplier") : root.editingSupplier ? (root.editReviewVisible ? strings.t("confirmEdits") : strings.t("reviewEdits")) : root.createErrorCode ? strings.t("retrySave") : strings.t("saveSupplier"); enabled: !root.busy && supplierName.text.trim() !== "" && (!root.possibleDuplicate || allowDuplicate.checked) && (!root.editingSupplier || !root.editReviewVisible || editConfirmation.text === "yes"); onClicked: root.saveSupplier() }
+                        HeaderButton { objectName: "saveSupplier"; text: creator.running ? strings.t("savingSupplier") : root.editingSupplier ? (root.editReviewVisible ? strings.t("confirmEdits") : strings.t("reviewEdits")) : root.createErrorCode ? strings.t("retrySave") : strings.t("saveSupplier"); enabled: !root.busy && (root.editingSupplier || root.createConnectionReady) && supplierName.text.trim() !== "" && (!root.possibleDuplicate || allowDuplicate.checked) && (!root.editingSupplier || !root.editReviewVisible || editConfirmation.text === "yes"); onClicked: root.saveSupplier() }
+                        HeaderButton { objectName: "discardCreateDraft"; text: strings.t("discardCreateDraft"); visible: !root.editingSupplier && !root.createConnectionReady; enabled: !root.busy; onClicked: { root.resetSupplierForm(); root.createVisible = false; root.refresh(true); search.forceActiveFocus() } }
                         HeaderButton { text: root.editingSupplier ? strings.t("cancelEdit") : strings.t("backToSuppliers"); enabled: !creator.running; onClicked: { if (root.editingSupplier) root.resetSupplierForm(); root.createVisible = false; search.forceActiveFocus() } }
                     }
                 }

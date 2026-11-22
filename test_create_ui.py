@@ -18,12 +18,21 @@ class CreateUiTests(unittest.TestCase):
             shutil.copy2(source/'BarWidget.qml',plugin/'BarWidget.qml')
             shutil.copytree(source/'i18n',plugin/'i18n')
             (plugin/'suppliers.py').write_text('''import json,sys
-p=json.load(sys.stdin)
-if p['name']=='Fail supplier':
- print(json.dumps({'created':False,'error_code':'createPermission'}))
+if '--create' not in sys.argv:
+ print(json.dumps({'suppliers':[],'error':'','connected':True,'connection_id':'fixture-B'}))
 else:
- row={**p,'uuid':'00000000-0000-4000-8000-000000000001'}
- print(json.dumps({'created':True,'supplier':row,'report':{'suppliers':[row],'error':'','connected':True}}))
+ p=json.load(sys.stdin)
+ token=p.pop('connection_id')
+ if p['name']=='Fail supplier':
+  assert token == 'fixture-A'
+  print(json.dumps({'created':False,'error_code':'createPermission'}))
+ elif p['name']=='Fail before refresh':
+  assert token == 'fixture-A'
+  print(json.dumps({'created':False,'error_code':'createConnectionChanged'}))
+ else:
+  assert token == ('fixture-A' if p['name']=='Example Supplier' else 'fixture-B')
+  row={**p,'uuid':'00000000-0000-4000-8000-000000000001'}
+  print(json.dumps({'created':True,'supplier':row,'report':{'suppliers':[row],'error':'','connected':True,'connection_id':token}}))
 ''')
             (root/'shell.qml').write_text('''import QtQuick
 import Quickshell
@@ -51,6 +60,14 @@ ShellRoot {
   id: loader
   source: "plugin/BarWidget.qml"
   onLoaded: {
+   test.check(!item.createConnectionReady,"fresh form has no pin")
+   item.startCreate()
+   test.child(item,"supplierName").text="Unbound draft"
+   item.createVisible=false
+   item.report={suppliers:[],connection_id:"fixture-A"}
+   item.startCreate()
+   test.check(!item.createConnectionReady,"retained unbound form cannot be implicitly rebound")
+   item.resetSupplierForm()
    item.startCreate()
    test.child(item,"supplierName").text="Fail supplier"
    test.child(item,"supplierEmail").text="orders@example.invalid"
@@ -76,6 +93,31 @@ ShellRoot {
     test.check(!widget.createVisible,"success returns to list")
     test.check(widget.report.suppliers[0].name === "Example Supplier","list refreshed")
     test.check(test.child(widget,"supplierName").text === "","form cleared only after success")
+    widget.startCreate()
+    test.child(widget,"supplierName").text="Fail before refresh"
+    test.stage=2
+    widget.saveSupplier()
+   } else if(test.stage===2 && widget.createErrorCode==="createConnectionChanged") {
+    test.check(!test.child(widget,"saveSupplier").enabled,"helper mismatch disables Retry")
+    test.check(test.child(widget,"supplierName").text === "Fail before refresh","blocked old draft stays visible")
+    widget.resetSupplierForm()
+    widget.startCreate()
+    test.child(widget,"supplierName").text="Old after connection switch"
+    widget.createVisible=false
+    widget.report={suppliers:[],connection_id:"fixture-B"}
+    widget.startCreate()
+    test.check(widget.createConnectionId==="fixture-A","old draft is not rebound after reopening")
+    test.check(!test.child(widget,"saveSupplier").enabled,"refreshed switched connection disables Save")
+    test.check(test.child(widget,"discardCreateDraft").visible,"explicit discard is available")
+    widget.saveSupplier()
+    test.check(!widget.busy,"direct save function rejects blocked draft")
+    widget.resetSupplierForm()
+    widget.startCreate()
+    test.child(widget,"supplierName").text="New on B"
+    test.stage=3
+    widget.saveSupplier()
+   } else if(test.stage===3 && widget.noticeCode==="createSaved") {
+    test.check(widget.report.suppliers[0].name==="New on B","new draft saves on new connection")
     console.log("CREATE_UI_OK")
     Qt.quit()
    }

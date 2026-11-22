@@ -1,3 +1,4 @@
+import hashlib
 import json
 import io
 from pathlib import Path
@@ -173,6 +174,7 @@ class CreateTests(unittest.TestCase):
         patcher.start(); self.addCleanup(patcher.stop)
         s.save(s.SHARED,{'api_key':'synthetic-secret'})
         self.fields={'name':'Example Supplier','email':'orders@example.invalid','phone':'07 1234 5678', 'address':'Line 1\nLine 2','account_number':'A1','business_number':'B2'}
+        self.payload={**self.fields,'connection_id':s.connection_id('synthetic-secret',create=True)}
         self.refreshed={'suppliers':[],'error':'','connected':True}
     def test_creation_posts_only_documented_fields(self):
         uid='00000000-0000-4000-8000-000000000001'
@@ -188,7 +190,7 @@ class CreateTests(unittest.TestCase):
             self.assertEqual(req.get_header('X-api-key'),'synthetic-secret')
     def test_success_refreshes_and_includes_created_supplier(self):
         with patch.object(s,'fetch',return_value=[]), patch.object(s,'create_request') as post, patch.object(s,'report',return_value=self.refreshed) as refresh:
-            result=s.create_supplier(self.fields)
+            result=s.create_supplier(self.payload)
         self.assertTrue(result['created'])
         post.assert_called_once()
         refresh.assert_called_once_with(True,key_override='synthetic-secret')
@@ -199,36 +201,36 @@ class CreateTests(unittest.TestCase):
     def test_duplicate_requires_explicit_override(self):
         duplicate=s.clean({**self.fields,'name':'EXAMPLE SUPPLIER'})
         with patch.object(s,'fetch',return_value=[duplicate]), patch.object(s,'create_request') as post, patch.object(s,'report',return_value=self.refreshed):
-            result=s.create_supplier(self.fields)
+            result=s.create_supplier(self.payload)
             self.assertFalse(result['created']); self.assertTrue(result['duplicate'])
             post.assert_not_called()
-            self.assertTrue(s.create_supplier({**self.fields,'allow_duplicate':True})['created'])
+            self.assertTrue(s.create_supplier({**self.payload,'allow_duplicate':True})['created'])
             post.assert_called_once()
     def test_write_permission_failure_is_clear_and_not_success(self):
         error=urllib.error.HTTPError(s.BASE,403,'private error must not leak',{},io.BytesIO())
         with patch.object(s,'fetch',return_value=[]), patch.object(s,'create_request',side_effect=error):
-            result=s.create_supplier(self.fields)
+            result=s.create_supplier(self.payload)
         self.assertEqual(result,{'created':False,'error_code':'createPermission'})
         error.close()
     def test_unknown_result_is_recovered_without_second_post(self):
         with patch.object(s,'fetch',return_value=[]), patch.object(s,'create_request',side_effect=TimeoutError) as post:
-            result=s.create_supplier(self.fields)
+            result=s.create_supplier(self.payload)
         self.assertFalse(result['created']); post.assert_called_once()
         uid=s.read(next(s.CACHE.glob('create-*.json')))['uuid']
         row=s.clean({**self.fields,'uuid':uid})
         with patch.object(s,'existing_attempt',return_value=row) as get, patch.object(s,'create_request') as post, patch.object(s,'report',return_value=self.refreshed):
-            recovered=s.create_supplier(self.fields)
+            recovered=s.create_supplier(self.payload)
         self.assertTrue(recovered['created']); post.assert_not_called()
         get.assert_called_once_with('synthetic-secret',uid)
     def test_retry_reuses_original_uuid_if_not_created(self):
-        with patch.object(s,'fetch',return_value=[]), patch.object(s,'create_request',side_effect=TimeoutError): s.create_supplier(self.fields)
+        with patch.object(s,'fetch',return_value=[]), patch.object(s,'create_request',side_effect=TimeoutError): s.create_supplier(self.payload)
         uid=s.read(next(s.CACHE.glob('create-*.json')))['uuid']
         with patch.object(s,'existing_attempt',return_value=None), patch.object(s,'fetch',return_value=[]), patch.object(s,'create_request') as post, patch.object(s,'report',return_value=self.refreshed):
-            self.assertTrue(s.create_supplier(self.fields)['created'])
+            self.assertTrue(s.create_supplier(self.payload)['created'])
         self.assertEqual(post.call_args.args[1],uid)
     def test_success_is_preserved_if_refresh_fails(self):
         with patch.object(s,'fetch',return_value=[]), patch.object(s,'create_request'), patch.object(s,'report',return_value={'suppliers':[],'error':'offline'}):
-            result=s.create_supplier(self.fields)
+            result=s.create_supplier(self.payload)
         self.assertTrue(result['created']); self.assertTrue(result['refresh_failed'])
         self.assertEqual(len(result['report']['suppliers']),1)
     def test_validation_never_posts_invalid_input(self):
@@ -243,6 +245,62 @@ class CreateTests(unittest.TestCase):
             self.assertEqual(s.main(),0)
             create.assert_not_called()
             self.assertEqual(json.loads(output.getvalue()),{'created':False,'error_code':'invalidForm'})
+    def test_report_uses_an_opaque_private_id(self):
+        with patch.object(s,'fetch',return_value=[]):
+            first=s.report(True)
+            second=s.report()
+            s.save(s.SHARED,{'api_key':'shared-key'})
+            new=s.report(True)
+        digest=hashlib.sha256(b'synthetic-secret').hexdigest()
+        for forbidden in ('synthetic-secret', digest, digest[:24]):
+            self.assertNotIn(forbidden,json.dumps(first))
+        self.assertEqual(first['connection_id'],second['connection_id'])
+        self.assertNotEqual(first['connection_id'],new['connection_id'])
+        for path in s.CACHE.glob('connection-*.json'):
+            self.assertEqual(path.stat().st_mode & 0o777,0o600)
+
+    def test_changed_connection_blocks_even_pending_retry_without_network(self):
+        with patch.object(s,'fetch',return_value=[]), patch.object(s,'create_request',side_effect=TimeoutError):
+            self.assertFalse(s.create_supplier(self.payload)['created'])
+        s.save(s.SHARED,{'api_key':'shared-key'})
+        s.connection_id('shared-key',create=True)
+        with patch.object(s,'existing_attempt') as get, patch.object(s,'fetch') as fetch, patch.object(s,'create_request') as post:
+            result=s.create_supplier(self.payload)
+            self.assertEqual(result,{'created':False,'error_code':'createConnectionChanged'})
+            for op in (get,fetch,post): op.assert_not_called()
+        self.assertEqual(len(list(s.CACHE.glob('create-*.json'))),1)
+
+    def test_missing_or_invalid_connection_blocks_before_io(self):
+        with patch.object(s,'existing_attempt') as get, patch.object(s,'fetch') as fetch, patch.object(s,'create_request') as post:
+            for token in (None,'',[], 'invalid'):
+                self.assertEqual(s.create_supplier({**self.payload,'connection_id':token})['error_code'],'createConnectionMissing')
+            s.save(s.CONFIG/'credentials.json',{'api_key':'synthetic-secret'})
+            s.SHARED.write_text('invalid JSON')
+            self.assertEqual(s.create_supplier(self.payload)['error_code'],'createConnectionMissing')
+            s.SHARED.unlink()
+            (s.CONFIG/'credentials.json').unlink()
+            self.assertEqual(s.create_supplier(self.payload)['error_code'],'createConnectionMissing')
+            for op in (get,fetch,post): op.assert_not_called()
+
+    def test_key_swap_during_duplicate_check_blocks_post(self):
+        def switch_during_fetch(key):
+            self.assertEqual(key,'synthetic-secret')
+            s.save(s.SHARED,{'api_key':'shared-key'})
+            return []
+        with patch.object(s,'fetch',side_effect=switch_during_fetch), patch.object(s,'create_request') as post, patch.object(s,'report') as refresh:
+            self.assertEqual(s.create_supplier(self.payload),{'created':False,'error_code':'createConnectionChanged'})
+            post.assert_not_called()
+            refresh.assert_not_called()
+        self.assertFalse(list(s.CACHE.glob('create-*.json')))
+
+    def test_key_swap_at_post_boundary_cannot_redirect_snapshot(self):
+        def switch_at_post(key, record_id, fields):
+            s.save(s.SHARED,{'api_key':'shared-key'})
+            self.assertEqual(key,'synthetic-secret')
+        with patch.object(s,'fetch',return_value=[]), patch.object(s,'create_request',side_effect=switch_at_post) as post, patch.object(s,'report',return_value=self.refreshed) as refresh:
+            self.assertTrue(s.create_supplier(self.payload)['created'])
+        post.assert_called_once()
+        refresh.assert_called_once_with(True,key_override='synthetic-secret')
 
 
 class DeleteTests(unittest.TestCase):
@@ -319,7 +377,7 @@ class DeleteTests(unittest.TestCase):
         account=s.hashlib.sha256(b'synthetic-secret').hexdigest()[:24]
         s.save(s.CACHE/('create-'+account+'-'+fingerprint+'.json'),{'uuid':self.uid})
         with patch.object(s,'existing_attempt',return_value={**self.row,'active':False}), patch.object(s,'fetch',return_value=[]), patch.object(s,'create_request') as post, patch.object(s,'report',return_value={'suppliers':[],'error':''}):
-            result=s.create_supplier(fields)
+            result=s.create_supplier({**fields,'connection_id':s.connection_id('synthetic-secret',create=True)})
             self.assertTrue(result['created']); self.assertNotEqual(post.call_args.args[1],self.uid)
 
 

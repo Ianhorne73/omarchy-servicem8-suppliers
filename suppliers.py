@@ -3,6 +3,7 @@
 import argparse
 import datetime as dt
 import hashlib
+import hmac
 import fcntl
 import uuid
 import json
@@ -103,8 +104,49 @@ def action_url(kind, value):
     if kind == 'map': return 'https://www.google.com/maps/search/?api=1&query=' + urllib.parse.quote(value, safe='')
     return ''
 
+def active_key():
+    # A broken shared file is not permission to write using a legacy account.
+    # Reuse legacy credentials only when there is no configured shared key.
+    try:
+        mode = SHARED.lstat().st_mode
+    except FileNotFoundError:
+        mode = None
+    except OSError:
+        return None
+    if mode is not None:
+        if not stat.S_ISREG(mode): return None
+        try: shared = read_object(SHARED)
+        except (OSError, ValueError): return None
+        if 'api_key' in shared:
+            key = shared['api_key']
+            return key.strip() if isinstance(key, str) and key.strip() else None
+    key = read(CONFIG/'credentials.json').get('api_key')
+    return key.strip() if isinstance(key, str) and key.strip() else None
+
+
+def connection_id(key, create=False):
+    # Export only an opaque random ID. The existing private cache account hash
+    # is used only for the filename, never sent to the UI or ServiceM8.
+    account = hashlib.sha256(key.encode()).hexdigest()[:24]
+    path = CACHE / ('connection-' + account + '.json')
+    def current():
+        value = read(path).get('id')
+        return value if isinstance(value, str) and len(value) == 32 and all(c in '0123456789abcdef' for c in value) else ''
+    if not create: return current()
+    CACHE.mkdir(parents=True, mode=0o700, exist_ok=True)
+    CACHE.chmod(0o700)
+    with (CACHE / 'connection-id.lock').open('a') as lock:
+        os.fchmod(lock.fileno(), 0o600)
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        value = current()
+        if not value:
+            value = uuid.uuid4().hex
+            save(path, {'id':value})
+        return value
+
+
 def report(force=False, new_key=None, key_override=None):
-    key = new_key or key_override or read(SHARED).get('api_key') or read(CONFIG/'credentials.json').get('api_key')
+    key = new_key if new_key is not None else key_override if key_override is not None else active_key()
     if not isinstance(key, str) or not key.strip(): return {'suppliers':[], 'error':'', 'needs_setup':True, 'connected':False}
     key = key.strip()
     path = CACHE/(hashlib.sha256(key.encode()).hexdigest()[:24] + '.json')
@@ -112,7 +154,12 @@ def report(force=False, new_key=None, key_override=None):
     now = dt.datetime.now(dt.timezone.utc)
     try: age = (now - dt.datetime.fromisoformat(cached.get('updated',''))).total_seconds()
     except (ValueError, TypeError): age = 1e10
-    if not force and new_key is None and 0 <= age < 900: return {**cached, 'connected':True}
+    if new_key is None:
+        try: binding = connection_id(key, create=True)
+        except (OSError, ValueError): binding = ''
+    else: binding = ''
+    if not force and new_key is None and 0 <= age < 900:
+        return {**cached, 'connected':True, 'connection_id':binding}
     try:
         rows = fetch(key)
         data = {'suppliers':rows, 'updated':now.isoformat(), 'error':'', 'needs_setup':False, 'connected':True}
@@ -120,12 +167,14 @@ def report(force=False, new_key=None, key_override=None):
             try: save_connection(key)
             except (OSError, ValueError):
                 return {'suppliers':[], 'error':'Could not save the shared connection. Check the existing connection file and try again.', 'needs_setup':False, 'connected':False}
+            try: binding = connection_id(key, create=True)
+            except (OSError, ValueError): binding = ''
         save(path, data)
-        return data
+        return {**data, 'connection_id':binding}
     except urllib.error.HTTPError as e:
         error = {401:'API key rejected. Check your connection.',403:'Supplier access denied. Enable Suppliers and grant read_suppliers access.',429:'ServiceM8 rate limit reached. Try again later.'}.get(e.code, 'ServiceM8 request failed. Try again later.')
     except (OSError, ValueError, urllib.error.URLError): error = 'Could not refresh suppliers. Check your connection and try again.'
-    return {**cached, 'suppliers':cached.get('suppliers', []), 'error':error, 'needs_setup':False, 'stale':bool(cached), 'connected':False}
+    return {**cached, 'suppliers':cached.get('suppliers', []), 'error':error, 'needs_setup':False, 'stale':bool(cached), 'connected':False, 'connection_id':binding}
 
 CREATE_FIELDS = ('name', 'email', 'phone', 'address', 'account_number', 'business_number')
 CREATE_LIMITS = {'name':200, 'email':254, 'phone':100, 'address':2048, 'account_number':100, 'business_number':100}
@@ -175,10 +224,18 @@ def existing_attempt(key, record_id):
 def create_supplier(payload):
     """Only called after the user presses Save. Never automatically retry POST."""
     try:
-        fields = validate_supplier(payload)
-        key = read(SHARED).get('api_key') or read(CONFIG/'credentials.json').get('api_key')
-        if not isinstance(key, str) or not key.strip(): return {'created':False, 'error_code':'notConnected'}
-        key = key.strip()
+        if not isinstance(payload, dict): raise FormError('invalidForm')
+        binding = payload.get('connection_id')
+        fields = validate_supplier({k:v for k,v in payload.items() if k != 'connection_id'})
+        if not isinstance(binding, str) or len(binding) != 32 or any(c not in '0123456789abcdef' for c in binding):
+            raise FormError('createConnectionMissing')
+        # Compare and execute with the *same* credential snapshot. Re-reading
+        # after this point could send a retry to a newly selected organisation.
+        key = active_key()
+        if key is None: raise FormError('createConnectionMissing')
+        current = connection_id(key)
+        if not current or not hmac.compare_digest(binding, current):
+            raise FormError('createConnectionChanged')
         account = hashlib.sha256(key.encode()).hexdigest()[:24]
         fingerprint = hashlib.sha256(json.dumps(fields, sort_keys=True).encode()).hexdigest()[:24]
         CACHE.mkdir(parents=True, mode=0o700, exist_ok=True)
@@ -188,6 +245,7 @@ def create_supplier(payload):
         with (CACHE/('create-' + account + '.lock')).open('a') as lock:
             os.chmod(lock.name, 0o600)
             fcntl.flock(lock, fcntl.LOCK_EX)
+            if active_key() != key: raise FormError('createConnectionChanged')
             attempt = read(path)
             record_id = str(uuid.UUID(attempt['uuid'])) if attempt.get('uuid') else str(uuid.uuid4())
             existing = existing_attempt(key, record_id) if attempt else None
@@ -198,6 +256,9 @@ def create_supplier(payload):
                 duplicates = [r for r in rows if r['name'].casefold() == fields['name'].casefold() or (fields['email'] and r['email'].casefold() == fields['email'].casefold())]
                 if duplicates and not payload.get('allow_duplicate', False):
                     return {'created':False, 'error_code':'duplicateFound', 'duplicate':True}
+                # A concurrent switch during the duplicate check is detectable.
+                # Never substitute a fresh credential into this attempt.
+                if active_key() != key: raise FormError('createConnectionChanged')
                 # Persist the UUID before posting, so a lost response can be recovered on Retry.
                 save(path, {'uuid':record_id})
                 create_request(key, record_id, fields)

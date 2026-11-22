@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.6
+
+- Keep new supplier drafts and retries tied to their original ServiceM8 connection. If the connection changes, discard the draft and start again.
+
 ## 1.3.5
 
 - Save or replace the shared connection only when users select Save connection, preserving unrelated settings. Refresh can still use a legacy key without moving it.
